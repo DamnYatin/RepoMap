@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --layer-01: #f4f4f4;
+  --layer-02: #ffffff;
+  --border-subtle: #e0e0e0;
+  --border-strong: #8d8d8d;
+  --text-primary: #161616;
+  --text-secondary: #525252;
+  --text-helper: #6f6f6f;
+  --accent: #0f62fe;
+  --accent-hover: #0050e6;
+  --link: #0f62fe;
+  --error: #da1e28;
+  --success: #198038;
+  --warning: #8e6a00;
+  --warning-marker: #f1c21b;
+}
+
+.dark {
+  --background: #161616;
+  --layer-01: #262626;
+  --layer-02: #393939;
+  --border-subtle: #393939;
+  --border-strong: #6f6f6f;
+  --text-primary: #f4f4f4;
+  --text-secondary: #c6c6c6;
+  --text-helper: #a8a8a8;
+  --accent: #0f62fe;
+  --accent-hover: #0050e6;
+  --link: #78a9ff;
+  --error: #ff8389;
+  --success: #42be65;
+  --warning: #f1c21b;
+  --warning-marker: #f1c21b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--text-primary);
+  font-family: var(--font-ibm-plex-sans), system-ui, -apple-system, sans-serif;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+code, pre, kbd {
+  font-family: var(--font-ibm-plex-mono), monospace;
+  font-size: 13px;
+}
+
+/* Carbon focus ring */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Micro-transitions strictly 110ms-150ms */
+button, a, input {
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
