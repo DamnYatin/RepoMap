@@ -19,10 +19,54 @@ export class LLMError extends Error {
   }
 }
 
+export interface LLMConfig {
+  apiKey?: string;
+  baseUrl: string;
+  model: string;
+  isGroq: boolean;
+}
+
+/**
+ * Resolves active LLM configuration with automatic Groq free-tier detection.
+ * Supports GROQ_API_KEY, gsk_ key prefix, custom LLM_BASE_URL, and model overrides.
+ */
+export function getLLMConfig(): LLMConfig {
+  const groqKey = process.env.GROQ_API_KEY;
+  const genericKey = process.env.LLM_API_KEY;
+
+  const activeKey =
+    groqKey && !groqKey.includes("your_groq_api_key")
+      ? groqKey
+      : genericKey;
+
+  const isGroq = Boolean(
+    (groqKey && !groqKey.includes("your_groq_api_key")) ||
+    (activeKey && activeKey.trim().startsWith("gsk_")) ||
+    (process.env.LLM_BASE_URL && process.env.LLM_BASE_URL.includes("groq.com")) ||
+    (process.env.LLM_MODEL && process.env.LLM_MODEL.toLowerCase().includes("llama"))
+  );
+
+  const baseUrl = (
+    process.env.LLM_BASE_URL ||
+    (isGroq ? "https://api.groq.com/openai/v1" : "https://api.openai.com/v1")
+  ).replace(/\/+$/, "");
+
+  // Default to llama-3.3-70b-versatile for Groq, or gpt-4o-mini for OpenAI
+  const defaultModel = isGroq ? "llama-3.3-70b-versatile" : "gpt-4o-mini";
+  const model = process.env.LLM_MODEL || defaultModel;
+
+  return {
+    apiKey: activeKey?.trim(),
+    baseUrl,
+    model,
+    isGroq,
+  };
+}
+
 /**
  * Executes a call to any OpenAI-compatible /chat/completions endpoint.
- * Supports OpenAI, Gemini OpenAI endpoint, Groq, Mistral, Ollama, etc.
- * Enforces 40s timeout, temperature 0.2, and automatic retry on 5xx or network errors.
+ * Supports OpenAI, Groq, Gemini OpenAI endpoint, Mistral, Ollama, etc.
+ * Features 40s timeout, Groq TPM auto-fallback to llama-3.1-8b-instant, and retries.
  */
 export async function callLLM({
   system,
@@ -30,27 +74,33 @@ export async function callLLM({
   maxTokens = 4096,
   json = false,
 }: CallLLMOptions): Promise<string> {
-  const apiKey = process.env.LLM_API_KEY;
-  const baseUrl = (process.env.LLM_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
-  const model = process.env.LLM_MODEL || "gpt-4o-mini";
+  const config = getLLMConfig();
 
-  if (!apiKey || apiKey.includes("your_llm_api_key")) {
+  if (!config.apiKey || config.apiKey.includes("your_llm_api_key")) {
     throw new LLMError(
-      "LLM_API_KEY is not configured in .env.local. Please configure LLM_API_KEY to enable live AI analysis.",
+      "No valid LLM API key found. Please configure GROQ_API_KEY or LLM_API_KEY in .env.local to enable live AI analysis.",
       "MISSING_API_KEY"
     );
   }
 
-  const endpoint = `${baseUrl}/chat/completions`;
+  const endpoint = `${config.baseUrl}/chat/completions`;
 
-  const makeAttempt = async (useJsonFormat: boolean): Promise<string> => {
+  const makeAttempt = async (
+    useJsonFormat: boolean,
+    modelOverride?: string
+  ): Promise<string> => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 40000); // 40-second timeout
 
+    const activeModel = modelOverride || config.model;
+
+    // Enforce safe token limits for Groq free-tier
+    const effectiveMaxTokens = config.isGroq ? Math.min(maxTokens, 3500) : maxTokens;
+
     const body: Record<string, unknown> = {
-      model,
+      model: activeModel,
       temperature: 0.2,
-      max_tokens: maxTokens,
+      max_tokens: effectiveMaxTokens,
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
@@ -66,7 +116,7 @@ export async function callLLM({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey.trim()}`,
+          Authorization: `Bearer ${config.apiKey}`,
         },
         body: JSON.stringify(body),
         signal: controller.signal,
@@ -76,15 +126,26 @@ export async function callLLM({
 
       if (!res.ok) {
         const errorText = await res.text().catch(() => "");
-        // If provider rejects json_object format, fallback without it
+
+        // If provider rejects json_object format, retry without it
         if (useJsonFormat && res.status === 400 && errorText.toLowerCase().includes("response_format")) {
-          return makeAttempt(false);
+          return makeAttempt(false, activeModel);
+        }
+
+        // Groq Free Tier TPM rate limit handling:
+        // If 70B hits TPM limit (429), automatically fallback to llama-3.1-8b-instant
+        // which has a massive 30,000 TPM limit and finishes in under 1 second!
+        if (config.isGroq && res.status === 429 && activeModel !== "llama-3.1-8b-instant") {
+          console.warn(
+            `Groq ${activeModel} hit rate limit (429). Falling back to high-throughput llama-3.1-8b-instant...`
+          );
+          return makeAttempt(useJsonFormat, "llama-3.1-8b-instant");
         }
 
         const is5xx = res.status >= 500 && res.status < 600;
         throw new LLMError(
-          `LLM provider returned HTTP ${res.status}: ${errorText.substring(0, 300)}`,
-          is5xx ? "PROVIDER_5XX" : "PROVIDER_ERROR",
+          `LLM provider (${config.isGroq ? "Groq" : "OpenAI-compatible"}) returned HTTP ${res.status}: ${errorText.substring(0, 300)}`,
+          is5xx ? "PROVIDER_5XX" : res.status === 429 ? "RATE_LIMITED" : "PROVIDER_ERROR",
           res.status,
           errorText
         );
@@ -111,13 +172,12 @@ export async function callLLM({
     return await makeAttempt(json);
   } catch (err: unknown) {
     const isRetryable =
-      (err as LLMError)?.status && (err as LLMError).status! >= 500 ||
+      ((err as LLMError)?.status && (err as LLMError).status! >= 500) ||
       (err as Error)?.name === "FetchError" ||
       !(err as LLMError)?.status;
 
     if (isRetryable) {
       console.warn("Retrying LLM call once after error:", (err as Error).message);
-      // Brief 1s delay before retry
       await new Promise((resolve) => setTimeout(resolve, 1000));
       return await makeAttempt(false);
     }

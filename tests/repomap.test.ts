@@ -201,3 +201,38 @@ describe("postProcessAnalysis and StartHere backfilling", () => {
     expect(result.mermaid).toContain("flowchart TD");
   });
 });
+
+describe("getLLMConfig and Groq detection", () => {
+  const originalEnv = process.env;
+
+  it("detects Groq when GROQ_API_KEY is provided", async () => {
+    const { getLLMConfig } = await import("../lib/llm");
+    process.env = { ...originalEnv, GROQ_API_KEY: "gsk_test1234567890", LLM_API_KEY: undefined, LLM_BASE_URL: undefined, LLM_MODEL: undefined };
+    const config = getLLMConfig();
+    expect(config.isGroq).toBe(true);
+    expect(config.baseUrl).toBe("https://api.groq.com/openai/v1");
+    expect(config.model).toBe("llama-3.3-70b-versatile");
+    expect(config.apiKey).toBe("gsk_test1234567890");
+    process.env = originalEnv;
+  });
+
+  it("auto-detects Groq when generic LLM_API_KEY starts with gsk_", async () => {
+    const { getLLMConfig } = await import("../lib/llm");
+    process.env = { ...originalEnv, GROQ_API_KEY: undefined, LLM_API_KEY: "gsk_abcde12345", LLM_BASE_URL: undefined, LLM_MODEL: undefined };
+    const config = getLLMConfig();
+    expect(config.isGroq).toBe(true);
+    expect(config.baseUrl).toBe("https://api.groq.com/openai/v1");
+    expect(config.model).toBe("llama-3.3-70b-versatile");
+    process.env = originalEnv;
+  });
+
+  it("defaults to OpenAI when standard key is provided", async () => {
+    const { getLLMConfig } = await import("../lib/llm");
+    process.env = { ...originalEnv, GROQ_API_KEY: undefined, LLM_API_KEY: "sk-proj-testkey", LLM_BASE_URL: undefined, LLM_MODEL: undefined };
+    const config = getLLMConfig();
+    expect(config.isGroq).toBe(false);
+    expect(config.baseUrl).toBe("https://api.openai.com/v1");
+    expect(config.model).toBe("gpt-4o-mini");
+    process.env = originalEnv;
+  });
+});

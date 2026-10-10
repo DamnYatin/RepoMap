@@ -103,19 +103,31 @@ cp .env.local.example .env.local
 
 ### Environment Configuration (`.env.local`)
 Edit `.env.local` with your preferred credentials:
+
+#### Option 1: Groq Free Tier (Recommended for Free, High-Speed Inference)
+Get a free API key at [console.groq.com](https://console.groq.com):
 ```ini
+GROQ_API_KEY=gsk_your_groq_api_key_here
+
 # Optional: Raises GitHub rate limit from 60/hr to 5,000/hr
 GITHUB_TOKEN=your_personal_access_token
+```
+*Note: When `GROQ_API_KEY` (or a `gsk_` key) is detected, RepoMap automatically configures `https://api.groq.com/openai/v1` with `llama-3.3-70b-versatile`, optimizes prompt budgets to match Groq TPM limits, and provides automatic fallback to `llama-3.1-8b-instant` if token throughput limits are reached.*
 
-# LLM Provider Configuration (OpenAI, Gemini OpenAI endpoint, Groq, Ollama)
+#### Option 2: OpenAI / Custom OpenAI-Compatible
+```ini
 LLM_API_KEY=your_llm_api_key
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=gpt-4o-mini
+GITHUB_TOKEN=your_personal_access_token
+```
 
-# Optional Watsonx adapter
-# LLM_PROVIDER=watsonx
-# WATSONX_API_KEY=your_ibm_cloud_api_key
-# WATSONX_PROJECT_ID=your_watsonx_project_id
+#### Option 3: IBM Watsonx Adapter
+```ini
+LLM_PROVIDER=watsonx
+WATSONX_API_KEY=your_ibm_cloud_api_key
+WATSONX_PROJECT_ID=your_watsonx_project_id
+WATSONX_URL=https://us-south.ml.cloud.ibm.com
 ```
 
 ### Running Locally
