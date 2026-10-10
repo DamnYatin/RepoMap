@@ -136,7 +136,35 @@ npm run type-check
 
 ---
 
-## 7. Known Limitations & Edge Cases Handled
+## 7. Deploying to Vercel
+
+RepoMap is configured out-of-the-box for seamless Vercel deployment via `vercel.json`.
+
+### Option A: Deploy via Vercel CLI
+```bash
+# Install Vercel CLI globally (if not already installed)
+npm install -g vercel
+
+# Deploy preview
+vercel
+
+# Deploy to production
+vercel --prod
+```
+
+### Option B: Deploy via GitHub Integration
+1. Push your repository to GitHub.
+2. In the [Vercel Dashboard](https://vercel.com/new), import your repository.
+3. In **Project Settings > Environment Variables**, add:
+   - `LLM_API_KEY`: Your LLM provider API key
+   - `LLM_BASE_URL`: (Optional, defaults to `https://api.openai.com/v1`)
+   - `LLM_MODEL`: (Optional, defaults to `gpt-4o-mini`)
+   - `GITHUB_TOKEN`: (Optional, personal access token to raise rate limit to 5,000/hr)
+4. Click **Deploy**. Vercel will run `npm run build` which automatically precaches the 3 example repositories for instant demo access on serverless functions.
+
+---
+
+## 8. Known Limitations & Edge Cases Handled
 - **Monorepos**: Supports subpath scoping via URLs like `github.com/owner/repo/tree/main/packages/core`.
 - **Large Repositories**: If GitHub's tree API reports `truncated: true` (>100,000 files), RepoMap gracefully proceeds with available files and warns the user in the Analysis Scope panel.
 - **Empty Repositories**: Returns typed `EMPTY_REPO` error with actionable feedback.

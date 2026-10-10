@@ -1,0 +1,11 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install --ignore-scripts",
+  "functions": {
+    "app/api/**/*": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  }
+}
