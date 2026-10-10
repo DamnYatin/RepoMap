@@ -20,8 +20,8 @@ export function buildAnalysisPrompt(context: RepoContext): { system: string; use
   const treeList = context.treePaths.slice(0, 150).join("\n");
 
   let filesSection = "";
-  // Budget characters: Groq free tier TPM is tighter (~22,000 chars), other providers use ~38,000
-  const maxTotalChars = config.isGroq ? 22000 : 38000;
+  // Budget characters: Groq free tier 8k TPM limit requires ~14k chars prompt + 2k completion tokens
+  const maxTotalChars = config.isGroq ? 14000 : 38000;
   let currentLength = 0;
 
   for (const file of context.files) {
@@ -318,14 +318,15 @@ export async function analyzeRepoWithLLM(context: RepoContext): Promise<RepoGuid
   try {
     const durationSeconds = Math.max(0.1, (Date.now() - startTime) / 1000);
     return postProcessAnalysis(rawOutput, context, durationSeconds, modelName);
-  } catch (validationErr) {
-    console.warn("Zod validation failed, retrying LLM with strict error summary:", validationErr);
+  } catch (validationErr: unknown) {
+    const errMessage = (validationErr as Error)?.message || String(validationErr);
+    console.warn("Zod validation failed, retrying LLM with strict error summary:", errMessage);
     // Retry once with error feedback
-    const retryUserPrompt = `${user}\n\nATTENTION: Your previous response failed schema validation: ${(validationErr as Error).message}. Output valid JSON adhering strictly to the schema.`;
+    const retryUserPrompt = `${user}\n\nATTENTION: Your previous response failed schema validation: ${errMessage}. Output valid JSON adhering strictly to the schema.`;
     const retryOutput = await callLLM({
       system,
       user: retryUserPrompt,
-      maxTokens: 4096,
+      maxTokens: config.isGroq ? 2000 : 4096,
       json: true,
     });
 

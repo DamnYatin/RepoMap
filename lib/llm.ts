@@ -26,13 +26,57 @@ export interface LLMConfig {
   isGroq: boolean;
 }
 
+// Cached list of discovered Groq models for the current API key
+let discoveredGroqModels: string[] | null = null;
+
+export async function getAvailableGroqModels(apiKey: string): Promise<string[]> {
+  if (discoveredGroqModels && discoveredGroqModels.length > 0) {
+    return discoveredGroqModels;
+  }
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/models", {
+      headers: { Authorization: `Bearer ${apiKey.trim()}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.data)) {
+        const chatModels = data.data
+          .map((m: { id: string }) => m.id)
+          .filter(
+            (id: string) =>
+              (id.startsWith("openai/") || id.startsWith("qwen/") || id.includes("llama") || id.includes("mixtral")) &&
+              !id.includes("whisper") &&
+              !id.includes("prompt-guard") &&
+              !id.includes("safeguard") &&
+              !id.includes("canopylabs") &&
+              !id.includes("audio")
+          )
+          // Prioritize high-performance chat models
+          .sort((a: string, b: string) => {
+            if (a.includes("120b")) return -1;
+            if (b.includes("120b")) return 1;
+            if (a.includes("qwen")) return -1;
+            if (b.includes("qwen")) return 1;
+            return 0;
+          });
+        discoveredGroqModels = chatModels;
+        return chatModels;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not query Groq models endpoint:", err);
+  }
+  // Safe defaults if query fails
+  return ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b", "llama-3.1-8b-instant"];
+}
+
 /**
  * Resolves active LLM configuration with automatic Groq free-tier detection.
- * Supports GROQ_API_KEY, gsk_ key prefix, custom LLM_BASE_URL, and model overrides.
+ * Supports GROQ_API_KEY, groq_api_key, LLM_API_KEY, gsk_ prefix, and dynamic model discovery.
  */
 export function getLLMConfig(): LLMConfig {
-  const groqKey = process.env.GROQ_API_KEY;
-  const genericKey = process.env.LLM_API_KEY;
+  const groqKey = process.env.GROQ_API_KEY || process.env.groq_api_key;
+  const genericKey = process.env.LLM_API_KEY || process.env.llm_api_key;
 
   const activeKey =
     groqKey && !groqKey.includes("your_groq_api_key")
@@ -51,8 +95,9 @@ export function getLLMConfig(): LLMConfig {
     (isGroq ? "https://api.groq.com/openai/v1" : "https://api.openai.com/v1")
   ).replace(/\/+$/, "");
 
-  // Default to llama-3.1-8b-instant for Groq (universal free tier availability), or gpt-4o-mini for OpenAI
-  const defaultModel = isGroq ? "llama-3.1-8b-instant" : "gpt-4o-mini";
+  // Default model selection:
+  // For Groq: default to "openai/gpt-oss-120b" (or qwen/qwen3.8-27b), for OpenAI: gpt-4o-mini
+  const defaultModel = isGroq ? "openai/gpt-oss-120b" : "gpt-4o-mini";
   const model = process.env.LLM_MODEL || defaultModel;
 
   return {
@@ -66,7 +111,7 @@ export function getLLMConfig(): LLMConfig {
 /**
  * Executes a call to any OpenAI-compatible /chat/completions endpoint.
  * Supports OpenAI, Groq, Gemini OpenAI endpoint, Mistral, Ollama, etc.
- * Features 40s timeout, Groq TPM auto-fallback to llama-3.1-8b-instant, and retries.
+ * Features 40s timeout, automatic Groq model discovery, 404 model_not_found fallback, and retries.
  */
 export async function callLLM({
   system,
@@ -83,19 +128,33 @@ export async function callLLM({
     );
   }
 
+  // If using Groq, resolve available models to prevent 404 model_not_found
+  let groqAvailableModels: string[] = [];
+  if (config.isGroq) {
+    groqAvailableModels = await getAvailableGroqModels(config.apiKey);
+  }
+
   const endpoint = `${config.baseUrl}/chat/completions`;
 
   const makeAttempt = async (
     useJsonFormat: boolean,
-    modelOverride?: string
+    modelCandidateIndex = 0
   ): Promise<string> => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 40000); // 40-second timeout
 
-    const activeModel = modelOverride || config.model;
+    let activeModel = config.model;
+    if (config.isGroq && groqAvailableModels.length > 0) {
+      if (!process.env.LLM_MODEL) {
+        // Pick from available models in order
+        activeModel = groqAvailableModels[modelCandidateIndex] || groqAvailableModels[0];
+      } else if (modelCandidateIndex > 0) {
+        activeModel = groqAvailableModels[modelCandidateIndex] || groqAvailableModels[0];
+      }
+    }
 
-    // Enforce safe token limits for Groq free-tier
-    const effectiveMaxTokens = config.isGroq ? Math.min(maxTokens, 3500) : maxTokens;
+    // Enforce safe token limits for Groq free-tier (8,000 TPM total request limit: prompt + max_tokens)
+    const effectiveMaxTokens = config.isGroq ? Math.min(maxTokens, 2000) : maxTokens;
 
     const body: Record<string, unknown> = {
       model: activeModel,
@@ -129,31 +188,36 @@ export async function callLLM({
 
         // If provider rejects json_object format, retry without it
         if (useJsonFormat && res.status === 400 && errorText.toLowerCase().includes("response_format")) {
-          return makeAttempt(false, activeModel);
+          return makeAttempt(false, modelCandidateIndex);
         }
 
-        // Groq Model Not Found (404) or Access Denied handling:
-        // Automatically fallback to llama-3.1-8b-instant which is universally available on all free accounts
+        // Groq Model Not Found (404) handling:
+        // Automatically try the next available model for this account
         if (
           config.isGroq &&
           res.status === 404 &&
           (errorText.includes("model_not_found") || errorText.includes("does not exist")) &&
-          activeModel !== "llama-3.1-8b-instant"
+          modelCandidateIndex + 1 < groqAvailableModels.length
         ) {
+          const nextModel = groqAvailableModels[modelCandidateIndex + 1];
           console.warn(
-            `Groq model ${activeModel} not found (404). Falling back to universal llama-3.1-8b-instant...`
+            `Groq model ${activeModel} not found (404). Falling back to ${nextModel}...`
           );
-          return makeAttempt(useJsonFormat, "llama-3.1-8b-instant");
+          return makeAttempt(useJsonFormat, modelCandidateIndex + 1);
         }
 
-        // Groq Free Tier TPM rate limit handling:
-        // If 70B hits TPM limit (429), automatically fallback to llama-3.1-8b-instant
-        // which has a massive 30,000 TPM limit and finishes in under 1 second!
-        if (config.isGroq && res.status === 429 && activeModel !== "llama-3.1-8b-instant") {
+        // Groq Free Tier TPM rate limit handling (429):
+        // Automatically try next model
+        if (
+          config.isGroq &&
+          res.status === 429 &&
+          modelCandidateIndex + 1 < groqAvailableModels.length
+        ) {
+          const nextModel = groqAvailableModels[modelCandidateIndex + 1];
           console.warn(
-            `Groq ${activeModel} hit rate limit (429). Falling back to high-throughput llama-3.1-8b-instant...`
+            `Groq ${activeModel} hit rate limit (429). Falling back to ${nextModel}...`
           );
-          return makeAttempt(useJsonFormat, "llama-3.1-8b-instant");
+          return makeAttempt(useJsonFormat, modelCandidateIndex + 1);
         }
 
         const is5xx = res.status >= 500 && res.status < 600;
@@ -183,7 +247,7 @@ export async function callLLM({
 
   // Up to 1 retry on network or 5xx errors
   try {
-    return await makeAttempt(json);
+    return await makeAttempt(json, 0);
   } catch (err: unknown) {
     const isRetryable =
       ((err as LLMError)?.status && (err as LLMError).status! >= 500) ||
@@ -193,7 +257,7 @@ export async function callLLM({
     if (isRetryable) {
       console.warn("Retrying LLM call once after error:", (err as Error).message);
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      return await makeAttempt(false);
+      return await makeAttempt(false, 0);
     }
     throw err;
   }
