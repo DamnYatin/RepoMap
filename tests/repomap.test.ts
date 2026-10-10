@@ -211,7 +211,7 @@ describe("getLLMConfig and Groq detection", () => {
     const config = getLLMConfig();
     expect(config.isGroq).toBe(true);
     expect(config.baseUrl).toBe("https://api.groq.com/openai/v1");
-    expect(config.model).toBe("llama-3.3-70b-versatile");
+    expect(config.model).toBe("llama-3.1-8b-instant");
     expect(config.apiKey).toBe("gsk_test1234567890");
     process.env = originalEnv;
   });
@@ -222,7 +222,7 @@ describe("getLLMConfig and Groq detection", () => {
     const config = getLLMConfig();
     expect(config.isGroq).toBe(true);
     expect(config.baseUrl).toBe("https://api.groq.com/openai/v1");
-    expect(config.model).toBe("llama-3.3-70b-versatile");
+    expect(config.model).toBe("llama-3.1-8b-instant");
     process.env = originalEnv;
   });
 

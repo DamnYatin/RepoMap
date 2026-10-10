@@ -51,8 +51,8 @@ export function getLLMConfig(): LLMConfig {
     (isGroq ? "https://api.groq.com/openai/v1" : "https://api.openai.com/v1")
   ).replace(/\/+$/, "");
 
-  // Default to llama-3.3-70b-versatile for Groq, or gpt-4o-mini for OpenAI
-  const defaultModel = isGroq ? "llama-3.3-70b-versatile" : "gpt-4o-mini";
+  // Default to llama-3.1-8b-instant for Groq (universal free tier availability), or gpt-4o-mini for OpenAI
+  const defaultModel = isGroq ? "llama-3.1-8b-instant" : "gpt-4o-mini";
   const model = process.env.LLM_MODEL || defaultModel;
 
   return {
@@ -130,6 +130,20 @@ export async function callLLM({
         // If provider rejects json_object format, retry without it
         if (useJsonFormat && res.status === 400 && errorText.toLowerCase().includes("response_format")) {
           return makeAttempt(false, activeModel);
+        }
+
+        // Groq Model Not Found (404) or Access Denied handling:
+        // Automatically fallback to llama-3.1-8b-instant which is universally available on all free accounts
+        if (
+          config.isGroq &&
+          res.status === 404 &&
+          (errorText.includes("model_not_found") || errorText.includes("does not exist")) &&
+          activeModel !== "llama-3.1-8b-instant"
+        ) {
+          console.warn(
+            `Groq model ${activeModel} not found (404). Falling back to universal llama-3.1-8b-instant...`
+          );
+          return makeAttempt(useJsonFormat, "llama-3.1-8b-instant");
         }
 
         // Groq Free Tier TPM rate limit handling:
