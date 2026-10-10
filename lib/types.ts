@@ -80,7 +80,7 @@ export const LLMGuideOutputSchema = z.object({
   components: z.array(ComponentSchema).min(3),
   edges: z.array(EdgeSchema),
   directories: z.array(DirectorySchema),
-  startHere: z.array(StartHereItemSchema).min(3),
+  startHere: z.array(StartHereItemSchema).default([]),
   concepts: z.array(ConceptSchema),
   runLocally: RunLocallySchema,
   contribute: ContributeSchema,

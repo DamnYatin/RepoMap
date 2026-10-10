@@ -54,6 +54,17 @@ export function parseGithubUrl(rawInput: string): ParsedGithubUrl {
   const owner = parts[0];
   const repo = parts[1];
 
+  if (
+    owner === "." ||
+    owner === ".." ||
+    repo === "." ||
+    repo === ".." ||
+    owner.includes("..") ||
+    repo.includes("..")
+  ) {
+    throw new GithubApiError("INVALID_URL", "Invalid owner or repository name.");
+  }
+
   const validNameRegex = /^[A-Za-z0-9_.-]+$/;
   if (!validNameRegex.test(owner) || !validNameRegex.test(repo) || owner.length > 100 || repo.length > 100) {
     throw new GithubApiError(

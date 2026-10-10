@@ -45,6 +45,61 @@ export function ResultsView({
   const [explainingPath, setExplainingPath] = useState<string | null>(null);
   const [fileExplanations, setFileExplanations] = useState<Record<string, string>>({});
 
+  // State for Quiz feature
+  const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
+  const [quizLoaded, setQuizLoaded] = useState<boolean>(false);
+  const [quizLoading, setQuizLoading] = useState<boolean>(false);
+  const [quizSelections, setQuizSelections] = useState<Record<number, number>>({});
+  const [quizChecked, setQuizChecked] = useState<Record<number, boolean>>({});
+
+  // State for Ask feature
+  const [askQuestion, setAskQuestion] = useState<string>("");
+  const [askLoading, setAskLoading] = useState<boolean>(false);
+  const [askHistory, setAskHistory] = useState<Array<{ q: string; a: string }>>([]);
+
+  const loadQuiz = async () => {
+    setQuizLoading(true);
+    try {
+      const res = await fetch("/api/quiz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: githubBase }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setQuizQuestions(data.questions || []);
+        setQuizLoaded(true);
+      }
+    } catch (err) {
+      console.warn("Quiz load error:", err);
+    } finally {
+      setQuizLoading(false);
+    }
+  };
+
+  const handleAskSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!askQuestion.trim() || askLoading) return;
+    const q = askQuestion.trim();
+    setAskLoading(true);
+    try {
+      const res = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: githubBase, question: q }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAskHistory((prev) => [...prev, { q, a: data.answer }]);
+        setAskQuestion("");
+      }
+    } catch (err) {
+      console.warn("Ask error:", err);
+    } finally {
+      setAskLoading(false);
+    }
+  };
+
   const sections = [
     { id: "overview", label: "Overview", icon: Info },
     { id: "architecture", label: "Architecture", icon: FolderTree },
@@ -53,6 +108,7 @@ export function ResultsView({
     { id: "concepts", label: "Key concepts", icon: HelpCircle },
     { id: "runlocally", label: "Run locally", icon: PlayCircle },
     { id: "contribute", label: "First contribution", icon: GitPullRequest },
+    { id: "quiz", label: "Understanding quiz", icon: HelpCircle },
     { id: "scope", label: "Analysis scope", icon: ShieldCheck },
   ];
 
@@ -701,7 +757,111 @@ export function ResultsView({
             </div>
           </section>
 
-          {/* Section 8: Analysis Scope (Collapsible) */}
+          {/* Section 8: Check Your Understanding (Quiz) */}
+          <section id="section-quiz" className="border border-border-subtle bg-layer-01">
+            <div className="h-12 border-b border-border-subtle px-4 sm:px-6 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-text-primary">Check Your Understanding</h2>
+              <span className="text-xs text-text-helper">3 concept questions</span>
+            </div>
+            <div className="p-4 sm:p-6 space-y-6">
+              {!quizLoaded ? (
+                <button
+                  onClick={loadQuiz}
+                  disabled={quizLoading}
+                  className="h-9 px-4 border border-border-subtle bg-layer-02 text-xs text-text-primary hover:bg-background"
+                >
+                  {quizLoading ? "Generating questions..." : "Load understanding quiz"}
+                </button>
+              ) : (
+                <div className="space-y-6">
+                  {quizQuestions.map((q, qIndex) => {
+                    const isChecked = quizChecked[qIndex];
+                    const selected = quizSelections[qIndex];
+                    const isCorrect = selected === q.correctIndex;
+
+                    return (
+                      <div
+                        key={q.id}
+                        className="p-4 border border-border-subtle bg-layer-02 space-y-3"
+                      >
+                        <p className="text-xs font-semibold text-text-primary">
+                          {qIndex + 1}. {q.question}
+                        </p>
+
+                        <div className="space-y-2">
+                          {q.options.map((opt: string, optIdx: number) => (
+                            <label
+                              key={optIdx}
+                              className={`flex items-start space-x-2.5 p-2 text-xs cursor-pointer border ${
+                                selected === optIdx
+                                  ? "border-accent bg-layer-01"
+                                  : "border-transparent hover:bg-layer-01"
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name={`quiz-question-${qIndex}`}
+                                checked={selected === optIdx}
+                                onChange={() => {
+                                  setQuizSelections((prev) => ({ ...prev, [qIndex]: optIdx }));
+                                  setQuizChecked((prev) => ({ ...prev, [qIndex]: false }));
+                                }}
+                                className="mt-0.5 accent-accent"
+                              />
+                              <span className="text-text-primary">{opt}</span>
+                            </label>
+                          ))}
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1">
+                          <button
+                            onClick={() => {
+                              if (selected !== undefined) {
+                                setQuizChecked((prev) => ({ ...prev, [qIndex]: true }));
+                              }
+                            }}
+                            disabled={selected === undefined}
+                            className="h-8 px-3 border border-border-subtle bg-layer-01 text-xs text-text-secondary hover:text-text-primary disabled:opacity-40"
+                          >
+                            Check answer
+                          </button>
+
+                          {isChecked && (
+                            <div className="text-xs">
+                              {isCorrect ? (
+                                <span className="text-success font-semibold">Correct</span>
+                              ) : (
+                                <span className="text-error font-semibold">Incorrect</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {isChecked && (
+                          <div className="p-3 bg-layer-01 border border-border-subtle text-xs space-y-1">
+                            <p className="text-text-secondary">{q.explanation}</p>
+                            <p className="text-text-helper">
+                              Reference:{" "}
+                              <a
+                                href={githubFile(q.fileLink)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-link hover:underline font-mono"
+                              >
+                                {q.fileLink}
+                              </a>
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Section 9: Analysis Scope (Collapsible) */}
           <section id="section-scope" className="border border-border-subtle bg-layer-01">
             <button
               type="button"
@@ -772,6 +932,47 @@ export function ResultsView({
                 )}
               </div>
             )}
+          </section>
+
+          {/* Ask About This Repo - Docked Input Card */}
+          <section className="border border-border-strong bg-layer-01 p-4 sm:p-5 space-y-3">
+            <div className="flex items-center space-x-2">
+              <Terminal size={16} strokeWidth={1.5} className="text-accent" />
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-text-primary">
+                Ask about this repository
+              </h3>
+            </div>
+
+            {askHistory.length > 0 && (
+              <div className="space-y-3 max-h-60 overflow-y-auto border border-border-subtle bg-layer-02 p-3 text-xs">
+                {askHistory.map((item, idx) => (
+                  <div key={idx} className="space-y-1">
+                    <p className="font-semibold text-text-primary">Q: {item.q}</p>
+                    <p className="text-text-secondary whitespace-pre-line pl-2 border-l border-border-subtle">
+                      A: {item.a}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <form onSubmit={handleAskSubmit} className="flex gap-2">
+              <input
+                type="text"
+                value={askQuestion}
+                onChange={(e) => setAskQuestion(e.target.value)}
+                placeholder="Ask about architecture, entry points, or dependencies..."
+                disabled={askLoading}
+                className="flex-1 h-10 px-3 bg-layer-02 border border-border-subtle text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+              <button
+                type="submit"
+                disabled={askLoading || !askQuestion.trim()}
+                className="h-10 px-4 bg-accent text-white text-xs font-semibold hover:bg-accent-hover disabled:opacity-50"
+              >
+                {askLoading ? "Searching..." : "Ask"}
+              </button>
+            </form>
           </section>
 
           {/* Footer Transparency Notice */}
