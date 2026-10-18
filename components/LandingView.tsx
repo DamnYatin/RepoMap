@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { ArrowRight, History, GitFork, GitBranch } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { ArrowRight, History, GitFork, GitBranch, ChevronDown, Loader2 } from "lucide-react";
 
 export interface RecentItem {
   repoName: string;
@@ -23,8 +23,68 @@ export function LandingView({
   isSubmitting = false,
 }: LandingViewProps) {
   const [inputUrl, setInputUrl] = useState("");
-  const [branch, setBranch] = useState("");
+  const [selectedBranch, setSelectedBranch] = useState("main");
+  const [defaultBranch, setDefaultBranch] = useState("main");
+  const [branchList, setBranchList] = useState<string[]>(["main"]);
+  const [loadingBranches, setLoadingBranches] = useState<boolean>(false);
+  const [lastFetchedRepo, setLastFetchedRepo] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+
+  // Automatically fetch branches when a valid GitHub URL is entered
+  useEffect(() => {
+    const trimmed = inputUrl.trim();
+    if (!trimmed) {
+      setBranchList(["main"]);
+      setDefaultBranch("main");
+      setSelectedBranch("main");
+      setLastFetchedRepo("");
+      return;
+    }
+
+    const match = trimmed.match(
+      /(?:https?:\/\/)?(?:www\.)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)/i
+    );
+    if (!match) return;
+
+    const owner = match[1];
+    const repo = match[2].replace(/\.git$/i, "");
+    const repoKey = `${owner}/${repo}`.toLowerCase();
+
+    if (repoKey === lastFetchedRepo) return;
+
+    let isCancelled = false;
+    const timer = setTimeout(async () => {
+      setLoadingBranches(true);
+      try {
+        const res = await fetch("/api/branches", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ owner, repo }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (!isCancelled) {
+            const def = data.defaultBranch || "main";
+            const list = Array.isArray(data.branches) && data.branches.length > 0 ? data.branches : [def];
+            setDefaultBranch(def);
+            setBranchList(list);
+            setSelectedBranch(def);
+            setLastFetchedRepo(repoKey);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch branches:", err);
+      } finally {
+        if (!isCancelled) setLoadingBranches(false);
+      }
+    }, 350);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
+  }, [inputUrl, lastFetchedRepo]);
 
   const validateUrl = (value: string): boolean => {
     const trimmed = value.trim();
@@ -47,7 +107,7 @@ export function LandingView({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (validateUrl(inputUrl)) {
-      onAnalyze(inputUrl.trim(), branch.trim() || undefined);
+      onAnalyze(inputUrl.trim(), selectedBranch || defaultBranch);
     }
   };
 
@@ -112,20 +172,37 @@ export function LandingView({
               error ? "border-error" : "border-border-strong"
             }`}
           />
-          <div className="sm:w-48 relative shrink-0">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-text-helper">
-              <GitBranch size={14} strokeWidth={1.5} />
+          <div className="sm:w-56 relative shrink-0">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-text-helper z-10">
+              {loadingBranches ? (
+                <Loader2 size={14} strokeWidth={1.5} className="animate-spin text-accent" />
+              ) : (
+                <GitBranch size={14} strokeWidth={1.5} />
+              )}
             </div>
-            <input
-              id="branch-tag-input"
-              type="text"
-              value={branch}
-              onChange={(e) => setBranch(e.target.value)}
-              placeholder="Branch/Tag (opt)"
-              disabled={isSubmitting}
-              title="Specify a branch (e.g. develop, main) or release tag (e.g. v2.0)"
-              className="w-full h-12 pl-8 pr-3 bg-layer-01 border border-border-strong text-sm text-text-primary placeholder:text-text-helper rounded-none focus:outline-none focus:ring-2 focus:ring-accent font-mono text-xs"
-            />
+            <select
+              id="branch-select"
+              value={selectedBranch}
+              onChange={(e) => setSelectedBranch(e.target.value)}
+              disabled={isSubmitting || loadingBranches || !inputUrl.trim()}
+              title="Select repository branch"
+              className="w-full h-12 pl-8 pr-8 bg-layer-01 border border-border-strong text-xs font-mono text-text-primary rounded-none focus:outline-none focus:ring-2 focus:ring-accent appearance-none cursor-pointer disabled:opacity-50 truncate"
+            >
+              {loadingBranches ? (
+                <option value={defaultBranch}>Loading branches...</option>
+              ) : branchList.length > 0 ? (
+                branchList.map((b) => (
+                  <option key={b} value={b}>
+                    {b === defaultBranch ? `${b} (default)` : b}
+                  </option>
+                ))
+              ) : (
+                <option value="main">main (default)</option>
+              )}
+            </select>
+            <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none text-text-helper">
+              <ChevronDown size={14} strokeWidth={1.5} />
+            </div>
           </div>
           <button
             type="submit"
@@ -143,7 +220,7 @@ export function LandingView({
           </p>
         ) : (
           <p className="mt-1.5 text-xs text-text-helper">
-            Example: https://github.com/owner/repository (supports custom branches like <span className="font-mono text-text-secondary">develop</span> or tags like <span className="font-mono text-text-secondary">v2.0</span>)
+            Paste any repository link. Available branches are loaded automatically into the dropdown with the default branch pre-selected.
           </p>
         )}
       </form>

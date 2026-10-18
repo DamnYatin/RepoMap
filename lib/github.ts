@@ -519,3 +519,51 @@ export async function fetchGoodFirstIssues(
     return [];
   }
 }
+
+export interface RepoBranchesResult {
+  defaultBranch: string;
+  branches: string[];
+}
+
+/**
+ * Fetches repository default branch and list of available branches
+ */
+export async function fetchRepoBranches(
+  owner: string,
+  repo: string
+): Promise<RepoBranchesResult> {
+  try {
+    const [repoMeta, branchesList] = await Promise.all([
+      fetchGithubApi(`/repos/${owner}/${repo}`).catch(() => null),
+      fetchGithubApi(`/repos/${owner}/${repo}/branches?per_page=100`).catch(() => []),
+    ]);
+
+    const defaultBranch = repoMeta?.default_branch || "main";
+    let branches: string[] = [];
+
+    if (Array.isArray(branchesList)) {
+      branches = branchesList
+        .map((b: any) => (typeof b?.name === "string" ? b.name : ""))
+        .filter(Boolean);
+    }
+
+    // Default branch at the very top, followed by the rest sorted alphabetically
+    const otherBranches = branches
+      .filter((b) => b !== defaultBranch)
+      .sort((a, b) => a.localeCompare(b));
+
+    const allBranches = [defaultBranch, ...otherBranches];
+
+    return {
+      defaultBranch,
+      branches: allBranches.length > 0 ? allBranches : [defaultBranch],
+    };
+  } catch (err) {
+    console.warn("Failed to fetch repo branches:", err);
+    return {
+      defaultBranch: "main",
+      branches: ["main"],
+    };
+  }
+}
+
