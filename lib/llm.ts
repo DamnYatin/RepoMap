@@ -171,7 +171,13 @@ export async function callLLM({
       ],
     };
 
-    if (json && useJsonFormat) {
+    // For Groq reasoning models (e.g. gpt-oss-20b/120b, qwen), strict response_format causes json_validate_failed
+    const shouldUseJsonFormat =
+      json &&
+      useJsonFormat &&
+      (!config.isGroq || (!activeModel.includes("gpt-oss") && !activeModel.includes("qwen")));
+
+    if (shouldUseJsonFormat) {
       body.response_format = { type: "json_object" };
     }
 
@@ -191,9 +197,27 @@ export async function callLLM({
       if (!res.ok) {
         const errorText = await res.text().catch(() => "");
 
-        // If provider rejects json_object format, retry without it
-        if (useJsonFormat && res.status === 400 && errorText.toLowerCase().includes("response_format")) {
+        // If provider rejects json_object format or fails JSON validation (Groq json_validate_failed), retry without it
+        if (
+          useJsonFormat &&
+          res.status === 400 &&
+          (errorText.toLowerCase().includes("response_format") ||
+            errorText.includes("json_validate_failed") ||
+            errorText.toLowerCase().includes("failed to validate json"))
+        ) {
+          console.warn("Provider rejected JSON response format or failed JSON grammar validation. Retrying without strict format...");
           return makeAttempt(false, modelCandidateIndex, currentUserContent);
+        }
+
+        // If 400 error occurs and we have a next model candidate, try next model
+        if (
+          config.isGroq &&
+          res.status === 400 &&
+          modelCandidateIndex + 1 < groqAvailableModels.length
+        ) {
+          const nextModel = groqAvailableModels[modelCandidateIndex + 1];
+          console.warn(`Groq model ${activeModel} failed with 400. Trying model ${nextModel}...`);
+          return makeAttempt(false, modelCandidateIndex + 1, currentUserContent);
         }
 
         // Groq Request Too Large / ITPM token limit exceeded (413):

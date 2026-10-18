@@ -108,7 +108,7 @@ async function fetchGithubApi(endpoint: string): Promise<any> {
   try {
     res = await fetch(url, {
       headers: getGithubHeaders(),
-      next: { revalidate: 300 }, // 5 min cache
+      cache: "no-store", // Always fetch fresh to avoid caching stale 404s
     });
   } catch (err: unknown) {
     throw new GithubApiError("NETWORK", "Unable to connect to GitHub. Check your network connection.", String(err));
@@ -132,6 +132,9 @@ async function fetchGithubApi(endpoint: string): Promise<any> {
     }
 
     if (res.status === 404) {
+      if (endpoint.includes("/git/trees/")) {
+        throw new GithubApiError("NOT_FOUND", "Repository branch or git tree was not found.");
+      }
       throw new GithubApiError("NOT_FOUND", "Repository was not found or is private.");
     }
 
@@ -340,14 +343,14 @@ async function fetchFileContents(
 /**
  * Full GitHub repository context extraction pipeline.
  */
-export async function getRepoContext(rawUrl: string): Promise<RepoContext> {
+export async function getRepoContext(rawUrl: string, explicitBranch?: string): Promise<RepoContext> {
   const { owner, repo, branch: requestedBranch, subpath } = parseGithubUrl(rawUrl);
   const warnings: string[] = [];
 
   // 1. Fetch repo metadata
   const metaData = await fetchGithubApi(`/repos/${owner}/${repo}`);
   const defaultBranch = metaData.default_branch || "main";
-  const branch = requestedBranch || defaultBranch;
+  const branch = explicitBranch?.trim() || requestedBranch || defaultBranch;
 
   // 2. Fetch languages breakdown
   const languagesRaw: Record<string, number> = await fetchGithubApi(`/repos/${owner}/${repo}/languages`).catch(
@@ -383,7 +386,19 @@ export async function getRepoContext(rawUrl: string): Promise<RepoContext> {
   }
 
   // 4. Fetch recursive git tree
-  const treeResponse = await fetchGithubApi(`/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`);
+  let treeResponse: any;
+  try {
+    treeResponse = await fetchGithubApi(`/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
+  } catch (err) {
+    // If custom branch tree fetch failed and it's not the default branch, try default branch
+    if (branch !== defaultBranch) {
+      console.warn(`Branch "${branch}" tree fetch failed, falling back to default branch "${defaultBranch}"`);
+      treeResponse = await fetchGithubApi(`/repos/${owner}/${repo}/git/trees/${encodeURIComponent(defaultBranch)}?recursive=1`);
+    } else {
+      throw err;
+    }
+  }
+
   if (!treeResponse.tree || !Array.isArray(treeResponse.tree)) {
     throw new GithubApiError("EMPTY_REPO", "Could not retrieve git tree for repository.");
   }

@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let { url, branch, forceFresh = false } = body;
+  const { url, branch, forceFresh = false } = body;
   if (!url || typeof url !== "string") {
     return NextResponse.json(
       {
@@ -62,11 +62,6 @@ export async function POST(req: NextRequest) {
       },
       { status: 400 }
     );
-  }
-
-  // Support explicit branch/tag selector parameter
-  if (branch && typeof branch === "string" && branch.trim() && !url.includes("/tree/")) {
-    url = `${url.replace(/\/+$/, "")}/tree/${branch.trim()}`;
   }
 
   const encoder = new TextEncoder();
@@ -96,7 +91,7 @@ export async function POST(req: NextRequest) {
 
       // Stage 2: Fetch tree & metadata
       await sendStage("fetch_tree", "running");
-      const context = await getRepoContext(url);
+      const context = await getRepoContext(url, branch);
       await sendStage("fetch_tree", "done");
 
       // Check Cache
@@ -163,7 +158,7 @@ export async function POST(req: NextRequest) {
       // Emit Final Result
       await sendEvent({ type: "result", data: guide });
     } catch (err: unknown) {
-      console.error("Error in /api/analyze stream:", err);
+      console.error("Error in /api/analyze stream:", err instanceof Error ? err.message : String(err));
       if (err instanceof GithubApiError) {
         await sendEvent({
           type: "error",

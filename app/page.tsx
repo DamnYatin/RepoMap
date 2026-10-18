@@ -105,10 +105,7 @@ export default function Home() {
 
   // Main Analysis function
   const handleAnalyze = async (repoUrl: string, forceFresh = false, branch?: string) => {
-    let finalUrl = repoUrl.trim();
-    if (branch && branch.trim() && !finalUrl.includes("/tree/")) {
-      finalUrl = `${finalUrl.replace(/\/+$/, "")}/tree/${branch.trim()}`;
-    }
+    const finalUrl = repoUrl.trim();
     setCurrentRepoUrl(finalUrl);
     setErrorInfo(null);
     setViewState("loading");
