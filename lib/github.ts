@@ -450,3 +450,72 @@ export async function getRepoContext(rawUrl: string): Promise<RepoContext> {
     scope: subpath,
   };
 }
+
+export interface GithubGoodFirstIssue {
+  id: number;
+  number: number;
+  title: string;
+  url: string;
+  comments: number;
+  createdAt: string;
+  labels: Array<{ name: string; color: string }>;
+}
+
+/**
+ * Fetches open issues with labels like 'good first issue' or 'help wanted'
+ */
+export async function fetchGoodFirstIssues(
+  owner: string,
+  repo: string
+): Promise<GithubGoodFirstIssue[]> {
+  try {
+    const q = encodeURIComponent(
+      `repo:${owner}/${repo} is:issue is:open label:"good first issue","good-first-issue","help wanted","beginner"`
+    );
+    const searchRes = await fetchGithubApi(
+      `/search/issues?q=${q}&sort=updated&order=desc&per_page=5`
+    );
+
+    if (searchRes && Array.isArray(searchRes.items) && searchRes.items.length > 0) {
+      return searchRes.items.map((item: any) => ({
+        id: item.id,
+        number: item.number,
+        title: item.title,
+        url: item.html_url,
+        comments: item.comments || 0,
+        createdAt: item.created_at,
+        labels: (item.labels || []).map((l: any) => ({
+          name: String(l.name),
+          color: String(l.color || "6f6f6f"),
+        })),
+      }));
+    }
+
+    // Direct fallback
+    const directIssues = await fetchGithubApi(
+      `/repos/${owner}/${repo}/issues?state=open&labels=good%20first%20issue&per_page=5`
+    ).catch(() => []);
+
+    if (Array.isArray(directIssues) && directIssues.length > 0) {
+      return directIssues
+        .filter((i: any) => !i.pull_request)
+        .map((item: any) => ({
+          id: item.id,
+          number: item.number,
+          title: item.title,
+          url: item.html_url,
+          comments: item.comments || 0,
+          createdAt: item.created_at,
+          labels: (item.labels || []).map((l: any) => ({
+            name: String(l.name),
+            color: String(l.color || "6f6f6f"),
+          })),
+        }));
+    }
+
+    return [];
+  } catch (err) {
+    console.warn("Failed to fetch good first issues:", err);
+    return [];
+  }
+}

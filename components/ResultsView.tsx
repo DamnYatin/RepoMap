@@ -16,6 +16,8 @@ import {
   PlayCircle,
   GitPullRequest,
   Info,
+  Tag,
+  MessageSquare,
 } from "lucide-react";
 import { RepoGuide, Component } from "@/lib/types";
 import { MermaidDiagram } from "./MermaidDiagram";
@@ -46,6 +48,11 @@ export function ResultsView({
   const [explainingPath, setExplainingPath] = useState<string | null>(null);
   const [fileExplanations, setFileExplanations] = useState<Record<string, string>>({});
 
+  // State for Live Good First Issues
+  const [issues, setIssues] = useState<any[]>([]);
+  const [issuesLoaded, setIssuesLoaded] = useState<boolean>(false);
+  const [issuesLoading, setIssuesLoading] = useState<boolean>(false);
+
   // State for Quiz feature
   const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
   const [quizLoaded, setQuizLoaded] = useState<boolean>(false);
@@ -57,6 +64,40 @@ export function ResultsView({
   const [askQuestion, setAskQuestion] = useState<string>("");
   const [askLoading, setAskLoading] = useState<boolean>(false);
   const [askHistory, setAskHistory] = useState<Array<{ q: string; a: string }>>([]);
+
+  const meta = guide.metadata;
+  const githubBase = `https://github.com/${meta.owner}/${meta.repo}`;
+  const githubFile = (path: string) => `${githubBase}/blob/${meta.branch}/${path}`;
+
+  // Fetch Good First Issues on mount
+  useEffect(() => {
+    if (!meta.owner || !meta.repo) return;
+    let isCancelled = false;
+    setIssuesLoading(true);
+
+    fetch("/api/issues", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ owner: meta.owner, repo: meta.repo }),
+    })
+      .then((res) => (res.ok ? res.json() : { issues: [] }))
+      .then((data) => {
+        if (!isCancelled) {
+          setIssues(data.issues || []);
+          setIssuesLoaded(true);
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to load good first issues:", err);
+      })
+      .finally(() => {
+        if (!isCancelled) setIssuesLoading(false);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [meta.owner, meta.repo]);
 
   const handleNodeClick = (comp: Component) => {
     // 1. Try matching Start Here item
@@ -156,10 +197,6 @@ export function ResultsView({
     { id: "quiz", label: "Understanding quiz", icon: HelpCircle },
     { id: "scope", label: "Analysis scope", icon: ShieldCheck },
   ];
-
-  const meta = guide.metadata;
-  const githubBase = `https://github.com/${meta.owner}/${meta.repo}`;
-  const githubFile = (path: string) => `${githubBase}/blob/${meta.branch}/${path}`;
 
   // Scroll spy listener
   useEffect(() => {
@@ -833,6 +870,94 @@ export function ResultsView({
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Live Good First Issues from GitHub */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-semibold text-text-helper uppercase tracking-wider flex items-center space-x-1.5">
+                    <Tag size={12} strokeWidth={1.5} />
+                    <span>Live Starter Issues (GitHub)</span>
+                  </h3>
+                  <a
+                    href={`https://github.com/${meta.owner}/${meta.repo}/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22%2C%22help+wanted%22`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-link hover:underline flex items-center space-x-1"
+                  >
+                    <span>Browse GitHub issues</span>
+                    <ExternalLink size={10} strokeWidth={1.5} />
+                  </a>
+                </div>
+
+                {issuesLoading && (
+                  <div className="p-3 border border-border-subtle bg-layer-02 text-xs text-text-helper font-mono animate-pulse">
+                    Fetching live starter issues from GitHub...
+                  </div>
+                )}
+
+                {!issuesLoading && issuesLoaded && issues.length === 0 && (
+                  <div className="p-3 border border-border-subtle bg-layer-02 text-xs text-text-secondary flex items-start justify-between gap-2">
+                    <p>
+                      No open issues currently labeled <code className="text-text-primary font-mono text-[11px]">good first issue</code> or <code className="text-text-primary font-mono text-[11px]">help wanted</code>. Refer to the suggested starter areas above to identify self-contained modules for your first pull request.
+                    </p>
+                  </div>
+                )}
+
+                {!issuesLoading && issues.length > 0 && (
+                  <div className="space-y-2">
+                    {issues.map((issue) => (
+                      <div
+                        key={issue.id}
+                        className="p-3 border border-border-subtle bg-layer-02 hover:bg-layer-01 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center space-x-2">
+                            <span className="font-mono text-xs font-semibold text-text-helper">
+                              #{issue.number}
+                            </span>
+                            <a
+                              href={issue.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs font-semibold text-link hover:underline line-clamp-1"
+                            >
+                              {issue.title}
+                            </a>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {issue.labels.map((lbl: any) => (
+                              <span
+                                key={lbl.name}
+                                className="px-1.5 py-0.2 text-[10px] font-mono border border-border-subtle text-text-secondary bg-layer-01"
+                              >
+                                {lbl.name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-3 shrink-0 text-[11px] font-mono text-text-helper">
+                          {issue.comments > 0 && (
+                            <span className="flex items-center space-x-1">
+                              <MessageSquare size={12} strokeWidth={1.5} />
+                              <span>{issue.comments}</span>
+                            </span>
+                          )}
+                          <a
+                            href={issue.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-2 py-0.5 border border-border-subtle bg-layer-01 text-text-primary hover:bg-background flex items-center space-x-1"
+                          >
+                            <span>Open</span>
+                            <ExternalLink size={10} strokeWidth={1.5} />
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </section>
