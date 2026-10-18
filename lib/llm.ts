@@ -51,12 +51,16 @@ export async function getAvailableGroqModels(apiKey: string): Promise<string[]> 
               !id.includes("canopylabs") &&
               !id.includes("audio")
           )
-          // Prioritize high-performance chat models
+          // Prioritize high-capacity and reliable Llama models
           .sort((a: string, b: string) => {
-            if (a.includes("120b")) return -1;
-            if (b.includes("120b")) return 1;
-            if (a.includes("qwen")) return -1;
-            if (b.includes("qwen")) return 1;
+            if (a.includes("llama-3.3-70b")) return -1;
+            if (b.includes("llama-3.3-70b")) return 1;
+            if (a.includes("llama-3.1-8b")) return -1;
+            if (b.includes("llama-3.1-8b")) return 1;
+            if (a.includes("llama-3.1")) return -1;
+            if (b.includes("llama-3.1")) return 1;
+            if (a.includes("mixtral")) return -1;
+            if (b.includes("mixtral")) return 1;
             return 0;
           });
         discoveredGroqModels = chatModels;
@@ -66,8 +70,8 @@ export async function getAvailableGroqModels(apiKey: string): Promise<string[]> 
   } catch (err) {
     console.warn("Could not query Groq models endpoint:", err);
   }
-  // Safe defaults if query fails
-  return ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b", "llama-3.1-8b-instant"];
+  // Safe defaults if query fails: high-capacity models first
+  return ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "qwen/qwen3.8-27b"];
 }
 
 /**
@@ -96,7 +100,7 @@ export function getLLMConfig(): LLMConfig {
   ).replace(/\/+$/, "");
 
   // Default model selection:
-  // For Groq: default to "openai/gpt-oss-120b" (or qwen/qwen3.8-27b), for OpenAI: gpt-4o-mini
+  // For Groq: default to "openai/gpt-oss-120b" (dynamically resolved against live account models), for OpenAI: gpt-4o-mini
   const defaultModel = isGroq ? "openai/gpt-oss-120b" : "gpt-4o-mini";
   const model = process.env.LLM_MODEL || defaultModel;
 
@@ -138,7 +142,8 @@ export async function callLLM({
 
   const makeAttempt = async (
     useJsonFormat: boolean,
-    modelCandidateIndex = 0
+    modelCandidateIndex = 0,
+    currentUserContent = user
   ): Promise<string> => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 40000); // 40-second timeout
@@ -162,7 +167,7 @@ export async function callLLM({
       max_tokens: effectiveMaxTokens,
       messages: [
         { role: "system", content: system },
-        { role: "user", content: user },
+        { role: "user", content: currentUserContent },
       ],
     };
 
@@ -188,7 +193,34 @@ export async function callLLM({
 
         // If provider rejects json_object format, retry without it
         if (useJsonFormat && res.status === 400 && errorText.toLowerCase().includes("response_format")) {
-          return makeAttempt(false, modelCandidateIndex);
+          return makeAttempt(false, modelCandidateIndex, currentUserContent);
+        }
+
+        // Groq Request Too Large / ITPM token limit exceeded (413):
+        if (
+          config.isGroq &&
+          (res.status === 413 ||
+            errorText.includes("Request too large") ||
+            errorText.includes("ITPM") ||
+            errorText.includes("tokens per minute"))
+        ) {
+          // If we have a next model candidate (e.g. llama-3.1-8b-instant with 30,000 ITPM), try it
+          if (modelCandidateIndex + 1 < groqAvailableModels.length) {
+            const nextModel = groqAvailableModels[modelCandidateIndex + 1];
+            console.warn(
+              `Groq model ${activeModel} hit token limit (413). Falling back to higher-capacity model ${nextModel}...`
+            );
+            return makeAttempt(useJsonFormat, modelCandidateIndex + 1, currentUserContent);
+          }
+
+          // If no other model and prompt is large, dynamically truncate code budget and retry
+          if (currentUserContent.length > 7000) {
+            console.warn("Groq request too large (413). Reducing prompt size and retrying...");
+            const truncated =
+              currentUserContent.substring(0, Math.floor(currentUserContent.length * 0.6)) +
+              "\n</file_contents>\n</repo_data>\nOutput valid JSON onboarding guide only.";
+            return makeAttempt(useJsonFormat, modelCandidateIndex, truncated);
+          }
         }
 
         // Groq Model Not Found (404) handling:
@@ -203,7 +235,7 @@ export async function callLLM({
           console.warn(
             `Groq model ${activeModel} not found (404). Falling back to ${nextModel}...`
           );
-          return makeAttempt(useJsonFormat, modelCandidateIndex + 1);
+          return makeAttempt(useJsonFormat, modelCandidateIndex + 1, currentUserContent);
         }
 
         // Groq Free Tier TPM rate limit handling (429):
@@ -217,7 +249,7 @@ export async function callLLM({
           console.warn(
             `Groq ${activeModel} hit rate limit (429). Falling back to ${nextModel}...`
           );
-          return makeAttempt(useJsonFormat, modelCandidateIndex + 1);
+          return makeAttempt(useJsonFormat, modelCandidateIndex + 1, currentUserContent);
         }
 
         const is5xx = res.status >= 500 && res.status < 600;
