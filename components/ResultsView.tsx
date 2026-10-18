@@ -17,7 +17,7 @@ import {
   GitPullRequest,
   Info,
 } from "lucide-react";
-import { RepoGuide } from "@/lib/types";
+import { RepoGuide, Component } from "@/lib/types";
 import { MermaidDiagram } from "./MermaidDiagram";
 
 interface ResultsViewProps {
@@ -40,6 +40,7 @@ export function ResultsView({
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [copiedCommandIndex, setCopiedCommandIndex] = useState<number | null>(null);
   const [showScope, setShowScope] = useState<boolean>(false);
+  const [highlightedTarget, setHighlightedTarget] = useState<string | null>(null);
   
   // State for "Explain this file" inline expansions
   const [explainingPath, setExplainingPath] = useState<string | null>(null);
@@ -56,6 +57,50 @@ export function ResultsView({
   const [askQuestion, setAskQuestion] = useState<string>("");
   const [askLoading, setAskLoading] = useState<boolean>(false);
   const [askHistory, setAskHistory] = useState<Array<{ q: string; a: string }>>([]);
+
+  const handleNodeClick = (comp: Component) => {
+    // 1. Try matching Start Here item
+    const matchedStart = guide.startHere.find(
+      (s) => s.path === comp.path || comp.path.includes(s.path) || s.path.includes(comp.path)
+    );
+    if (matchedStart) {
+      const targetId = `starthere-${matchedStart.path.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+      const el = document.getElementById(targetId);
+      if (el) {
+        setActiveSection("starthere");
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        setHighlightedTarget(targetId);
+        setTimeout(() => setHighlightedTarget((prev) => (prev === targetId ? null : prev)), 2500);
+        return;
+      }
+    }
+
+    // 2. Try matching Directory Guide folder
+    const matchedDir = guide.directories.find(
+      (d) => comp.path.startsWith(d.path) || d.path.startsWith(comp.path)
+    );
+    if (matchedDir) {
+      const targetId = `dir-${matchedDir.path.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+      const el = document.getElementById(targetId);
+      if (el) {
+        setActiveSection("directories");
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        setHighlightedTarget(targetId);
+        setTimeout(() => setHighlightedTarget((prev) => (prev === targetId ? null : prev)), 2500);
+        return;
+      }
+    }
+
+    // 3. Fallback to Component Responsibility table row
+    const targetId = `comp-row-${comp.id}`;
+    const el = document.getElementById(targetId);
+    if (el) {
+      setActiveSection("architecture");
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightedTarget(targetId);
+      setTimeout(() => setHighlightedTarget((prev) => (prev === targetId ? null : prev)), 2500);
+    }
+  };
 
   const loadQuiz = async () => {
     setQuizLoading(true);
@@ -389,10 +434,18 @@ export function ResultsView({
             <div className="p-4 sm:p-6 space-y-6">
               {/* Mermaid Diagram */}
               <div>
-                <p className="text-xs text-text-helper mb-2">
-                  Server-synthesized component interaction diagram:
-                </p>
-                <MermaidDiagram chart={guide.mermaid} theme={theme} />
+                <div className="flex items-center justify-between text-xs text-text-helper mb-2">
+                  <p>Server-synthesized component interaction diagram:</p>
+                  <span className="text-[11px] font-mono text-text-helper hidden sm:inline">
+                    💡 Click any node to jump to its source in the guide
+                  </span>
+                </div>
+                <MermaidDiagram
+                  chart={guide.mermaid}
+                  theme={theme}
+                  components={guide.components}
+                  onNodeClick={handleNodeClick}
+                />
               </div>
 
               {/* Component Responsibility Table */}
@@ -410,24 +463,36 @@ export function ResultsView({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border-subtle">
-                      {guide.components.map((comp) => (
-                        <tr key={comp.id} className="hover:bg-layer-01">
-                          <td className="p-2.5 font-semibold text-text-primary whitespace-nowrap">
-                            {comp.name}
-                          </td>
-                          <td className="p-2.5 font-mono text-link">
-                            <a
-                              href={githubFile(comp.path)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="hover:underline"
-                            >
-                              {comp.path}
-                            </a>
-                          </td>
-                          <td className="p-2.5 text-text-secondary">{comp.responsibility}</td>
-                        </tr>
-                      ))}
+                      {guide.components.map((comp) => {
+                        const rowId = `comp-row-${comp.id}`;
+                        const isHighlighted = highlightedTarget === rowId;
+                        return (
+                          <tr
+                            key={comp.id}
+                            id={rowId}
+                            className={`transition-colors ${
+                              isHighlighted
+                                ? "bg-accent/20 ring-1 ring-accent"
+                                : "hover:bg-layer-01"
+                            }`}
+                          >
+                            <td className="p-2.5 font-semibold text-text-primary whitespace-nowrap">
+                              {comp.name}
+                            </td>
+                            <td className="p-2.5 font-mono text-link">
+                              <a
+                                href={githubFile(comp.path)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="hover:underline"
+                              >
+                                {comp.path}
+                              </a>
+                            </td>
+                            <td className="p-2.5 text-text-secondary">{comp.responsibility}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -445,19 +510,28 @@ export function ResultsView({
             </div>
             <div className="p-4 sm:p-6">
               <div className="border border-border-subtle bg-layer-02 divide-y divide-border-subtle">
-                {guide.directories.map((dir) => (
-                  <div
-                    key={dir.path}
-                    className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1 hover:bg-layer-01"
-                  >
-                    <span className="font-mono text-xs font-semibold text-text-primary">
-                      {dir.path}/
-                    </span>
-                    <span className="text-xs text-text-secondary sm:text-right">
-                      {dir.purpose}
-                    </span>
-                  </div>
-                ))}
+                {guide.directories.map((dir) => {
+                  const dirId = `dir-${dir.path.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+                  const isHighlighted = highlightedTarget === dirId;
+                  return (
+                    <div
+                      key={dir.path}
+                      id={dirId}
+                      className={`p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1 transition-all ${
+                        isHighlighted
+                          ? "bg-accent/20 ring-1 ring-accent"
+                          : "hover:bg-layer-01"
+                      }`}
+                    >
+                      <span className="font-mono text-xs font-semibold text-text-primary">
+                        {dir.path}/
+                      </span>
+                      <span className="text-xs text-text-secondary sm:text-right">
+                        {dir.purpose}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </section>
@@ -469,11 +543,19 @@ export function ResultsView({
               <span className="text-xs text-text-helper">5 sequential modules</span>
             </div>
             <div className="p-4 sm:p-6 space-y-3">
-              {guide.startHere.map((item, idx) => (
-                <div
-                  key={item.path}
-                  className="p-4 border border-border-subtle bg-layer-02 space-y-2"
-                >
+              {guide.startHere.map((item, idx) => {
+                const startId = `starthere-${item.path.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+                const isHighlighted = highlightedTarget === startId;
+                return (
+                  <div
+                    key={item.path}
+                    id={startId}
+                    className={`p-4 border space-y-2 transition-all ${
+                      isHighlighted
+                        ? "border-accent ring-2 ring-accent bg-accent/10"
+                        : "border-border-subtle bg-layer-02"
+                    }`}
+                  >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border-subtle pb-2">
                     <div className="flex items-center space-x-2">
                       <span className="w-5 h-5 bg-layer-01 border border-border-subtle text-xs font-mono flex items-center justify-center font-semibold text-text-primary">
@@ -522,7 +604,8 @@ export function ResultsView({
                     </div>
                   )}
                 </div>
-              ))}
+              );
+            })}
             </div>
           </section>
 

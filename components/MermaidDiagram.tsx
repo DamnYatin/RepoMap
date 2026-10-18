@@ -1,13 +1,21 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { Component } from "../lib/types";
 
 interface MermaidDiagramProps {
   chart: string;
   theme?: "light" | "dark";
+  components?: Component[];
+  onNodeClick?: (component: Component) => void;
 }
 
-export function MermaidDiagram({ chart, theme = "light" }: MermaidDiagramProps) {
+export function MermaidDiagram({
+  chart,
+  theme = "light",
+  components,
+  onNodeClick,
+}: MermaidDiagramProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [svgHtml, setSvgHtml] = useState<string>("");
   const [hasError, setHasError] = useState<boolean>(false);
@@ -63,6 +71,69 @@ export function MermaidDiagram({ chart, theme = "light" }: MermaidDiagramProps) 
       isCancelled = true;
     };
   }, [chart, theme]);
+
+  // Wire up interactive node clicks
+  useEffect(() => {
+    if (!containerRef.current || !components || !onNodeClick || !svgHtml) return;
+
+    const nodeElements = containerRef.current.querySelectorAll<SVGGElement>("g.node");
+    const cleanupFns: Array<() => void> = [];
+
+    nodeElements.forEach((g) => {
+      // Find matching component from node id (e.g. flowchart-n1-xxx or n1)
+      const idMatch = g.id.match(/(?:flowchart-)?n(\d+)/i);
+      let matchedComp: Component | undefined;
+
+      if (idMatch) {
+        const index = parseInt(idMatch[1], 10) - 1;
+        if (index >= 0 && index < components.length) {
+          matchedComp = components[index];
+        }
+      }
+
+      if (!matchedComp) {
+        const text = g.textContent?.trim().toLowerCase() || "";
+        matchedComp = components.find(
+          (c) => text.includes(c.name.toLowerCase()) || text.includes(c.id.toLowerCase())
+        );
+      }
+
+      if (matchedComp) {
+        g.style.cursor = "pointer";
+        g.setAttribute("title", `Click to jump to ${matchedComp.name} (${matchedComp.path})`);
+
+        const originalFilter = g.style.filter;
+
+        const handleClick = (e: MouseEvent) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onNodeClick(matchedComp!);
+        };
+
+        const handleMouseEnter = () => {
+          g.style.filter = "brightness(1.25) drop-shadow(0 0 4px rgba(15, 98, 254, 0.4))";
+        };
+
+        const handleMouseLeave = () => {
+          g.style.filter = originalFilter;
+        };
+
+        g.addEventListener("click", handleClick);
+        g.addEventListener("mouseenter", handleMouseEnter);
+        g.addEventListener("mouseleave", handleMouseLeave);
+
+        cleanupFns.push(() => {
+          g.removeEventListener("click", handleClick);
+          g.removeEventListener("mouseenter", handleMouseEnter);
+          g.removeEventListener("mouseleave", handleMouseLeave);
+        });
+      }
+    });
+
+    return () => {
+      cleanupFns.forEach((fn) => fn());
+    };
+  }, [svgHtml, components, onNodeClick]);
 
   if (hasError) {
     return (
