@@ -12,7 +12,7 @@ export interface RecentItem {
 interface LandingViewProps {
   onAnalyze: (url: string, branch?: string) => void;
   recentItems: RecentItem[];
-  onSelectRecent: (url: string) => void;
+  onSelectRecent?: (url: string) => void;
   isSubmitting?: boolean;
 }
 
@@ -29,6 +29,16 @@ export function LandingView({
   const [loadingBranches, setLoadingBranches] = useState<boolean>(false);
   const [lastFetchedRepo, setLastFetchedRepo] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+
+  const handleLoadUrl = (url: string) => {
+    setInputUrl(url);
+    setError(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    const inputEl = document.getElementById("repo-url-input");
+    if (inputEl) {
+      inputEl.focus();
+    }
+  };
 
   // Automatically fetch branches when a valid GitHub URL is entered
   useEffect(() => {
@@ -250,8 +260,8 @@ export function LandingView({
                 </div>
                 <button
                   type="button"
-                  onClick={() => onSelectRecent(item.url)}
-                  className="text-xs text-link hover:underline"
+                  onClick={() => handleLoadUrl(item.url)}
+                  className="text-xs text-link hover:underline font-mono"
                 >
                   Load
                 </button>
@@ -278,8 +288,8 @@ export function LandingView({
               </div>
               <button
                 type="button"
-                onClick={() => onAnalyze(eg.url)}
-                className="text-xs text-link hover:underline text-left sm:text-right shrink-0"
+                onClick={() => handleLoadUrl(eg.url)}
+                className="text-xs text-link hover:underline text-left sm:text-right shrink-0 font-mono"
               >
                 Load
               </button>

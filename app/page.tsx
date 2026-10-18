@@ -20,7 +20,7 @@ const DEFAULT_STEPS: StageStep[] = [
 ];
 
 export default function Home() {
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [theme, setTheme] = useState<"light" | "dark">("dark");
   const [viewState, setViewState] = useState<ViewState>("landing");
   const [currentRepoUrl, setCurrentRepoUrl] = useState<string>("");
   const [guideData, setGuideData] = useState<RepoGuide | null>(null);
@@ -30,18 +30,18 @@ export default function Home() {
   const [startTime, setStartTime] = useState<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Initialize Theme from localStorage or prefers-color-scheme
+  // Initialize Theme from localStorage or default directly to dark
   useEffect(() => {
     try {
       const savedTheme = localStorage.getItem("repomap-theme") as "light" | "dark" | null;
       if (savedTheme) {
         setTheme(savedTheme);
         document.documentElement.classList.toggle("dark", savedTheme === "dark");
+        document.documentElement.style.colorScheme = savedTheme;
       } else {
-        const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-        const initialTheme = prefersDark ? "dark" : "light";
-        setTheme(initialTheme);
-        document.documentElement.classList.toggle("dark", prefersDark);
+        setTheme("dark");
+        document.documentElement.classList.add("dark");
+        document.documentElement.style.colorScheme = "dark";
       }
     } catch {
       // ignore
@@ -80,6 +80,7 @@ export default function Home() {
       // ignore
     }
     document.documentElement.classList.toggle("dark", nextTheme === "dark");
+    document.documentElement.style.colorScheme = nextTheme;
   };
 
   const handleCancel = () => {
@@ -272,7 +273,6 @@ export default function Home() {
           <LandingView
             onAnalyze={(url, branch) => handleAnalyze(url, false, branch)}
             recentItems={recentItems}
-            onSelectRecent={(url) => handleAnalyze(url)}
           />
         )}
 

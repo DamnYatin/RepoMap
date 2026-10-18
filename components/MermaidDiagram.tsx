@@ -12,7 +12,7 @@ interface MermaidDiagramProps {
 
 export function MermaidDiagram({
   chart,
-  theme = "light",
+  theme = "dark",
   components,
   onNodeClick,
 }: MermaidDiagramProps) {
