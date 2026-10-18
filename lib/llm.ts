@@ -51,17 +51,19 @@ export async function getAvailableGroqModels(apiKey: string): Promise<string[]> 
               !id.includes("canopylabs") &&
               !id.includes("audio")
           )
-          // Prioritize high-capacity and reliable Llama models
+          // Prioritize high-capacity and reliable models, deprioritizing 20b models with tight 7k ITPM limits
           .sort((a: string, b: string) => {
-            if (a.includes("llama-3.3-70b")) return -1;
-            if (b.includes("llama-3.3-70b")) return 1;
-            if (a.includes("llama-3.1-8b")) return -1;
-            if (b.includes("llama-3.1-8b")) return 1;
-            if (a.includes("llama-3.1")) return -1;
-            if (b.includes("llama-3.1")) return 1;
-            if (a.includes("mixtral")) return -1;
-            if (b.includes("mixtral")) return 1;
-            return 0;
+            const score = (id: string) => {
+              if (id.includes("llama-3.3-70b")) return 100;
+              if (id.includes("llama-3.1-8b")) return 95;
+              if (id.includes("llama-3.1")) return 90;
+              if (id.includes("gpt-oss-120b")) return 85;
+              if (id.includes("qwen3.8-27b") || id.includes("qwen")) return 80;
+              if (id.includes("mixtral")) return 70;
+              if (id.includes("gpt-oss-20b")) return 10;
+              return 50;
+            };
+            return score(b) - score(a);
           });
         discoveredGroqModels = chatModels;
         return chatModels;
@@ -71,7 +73,7 @@ export async function getAvailableGroqModels(apiKey: string): Promise<string[]> 
     console.warn("Could not query Groq models endpoint:", err);
   }
   // Safe defaults if query fails: high-capacity models first
-  return ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "qwen/qwen3.8-27b"];
+  return ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3.8-27b", "mixtral-8x7b-32768"];
 }
 
 /**
@@ -158,8 +160,8 @@ export async function callLLM({
       }
     }
 
-    // Enforce safe token limits for Groq free-tier (8,000 TPM total request limit: prompt + max_tokens)
-    const effectiveMaxTokens = config.isGroq ? Math.min(maxTokens, 2000) : maxTokens;
+    // Ensure sufficient token budget for Groq completions to avoid truncated JSON
+    const effectiveMaxTokens = config.isGroq ? Math.min(maxTokens, 3500) : maxTokens;
 
     const body: Record<string, unknown> = {
       model: activeModel,

@@ -118,6 +118,71 @@ Rules:
 }
 
 /**
+ * Repairs common LLM JSON syntax imperfections:
+ * 1. Missing commas between array elements / objects: } \s* { or " \s* "
+ * 2. Trailing commas before closing brackets or braces
+ * 3. Truncated unclosed braces, brackets, or strings
+ */
+export function repairJsonSyntax(str: string): string {
+  let res = str;
+
+  // 1. Missing comma between closing brace and opening brace on adjacent lines: } \s* { -> }, {
+  res = res.replace(/}\s*(\r?\n)\s*{/g, "},\n{");
+  // 2. Missing comma between closing bracket and opening bracket: ] \s* [ -> ], [
+  res = res.replace(/]\s*(\r?\n)\s*\[/g, "],\n[");
+  // 3. Missing comma between string and opening brace: " \s* { -> ", {
+  res = res.replace(/"\s*(\r?\n)\s*{/g, '",\n{');
+  // 4. Missing comma between closing brace and string: } \s* " -> }, "
+  res = res.replace(/}\s*(\r?\n)\s*"/g, '},\n"');
+  // 5. Missing comma between string and string on adjacent lines: " \s* " -> ", "
+  res = res.replace(/"\s*(\r?\n)\s*"/g, '",\n"');
+  // 6. Trailing commas before closing ] or }
+  res = res.replace(/,\s*([\]}])/g, "$1");
+
+  // 7. Auto-close truncated string if stream ended abruptly
+  let inString = false;
+  for (let i = 0; i < res.length; i++) {
+    if (res[i] === '"' && (i === 0 || res[i - 1] !== "\\")) {
+      inString = !inString;
+    }
+  }
+  if (inString) {
+    res += '"';
+  }
+
+  // Remove any trailing comma or dangling colon/key
+  res = res.replace(/,\s*$/, "");
+  res = res.replace(/:\s*$/, ': ""');
+
+  const stack: string[] = [];
+  inString = false;
+  for (let i = 0; i < res.length; i++) {
+    const char = res[i];
+    if (char === '"' && (i === 0 || res[i - 1] !== "\\")) {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (char === "{" || char === "[") {
+      stack.push(char);
+    } else if (char === "}") {
+      if (stack.length && stack[stack.length - 1] === "{") stack.pop();
+    } else if (char === "]") {
+      if (stack.length && stack[stack.length - 1] === "[") stack.pop();
+    }
+  }
+
+  while (stack.length > 0) {
+    const last = stack.pop();
+    if (last === "{") res += "\n}";
+    if (last === "[") res += "\n]";
+  }
+
+  return res;
+}
+
+/**
  * Extracts and cleans JSON object from model output
  */
 export function extractJsonFromOutput(raw: string): string {
@@ -135,6 +200,10 @@ export function extractJsonFromOutput(raw: string): string {
 
   if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
     return cleaned.substring(firstBrace, lastBrace + 1);
+  }
+
+  if (firstBrace !== -1 && lastBrace === -1) {
+    return cleaned.substring(firstBrace);
   }
 
   return cleaned;
@@ -202,8 +271,13 @@ export function postProcessAnalysis(
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonString);
-  } catch (err) {
-    throw new Error(`Model did not produce valid JSON: ${(err as Error).message}`);
+  } catch {
+    try {
+      const repaired = repairJsonSyntax(jsonString);
+      parsed = JSON.parse(repaired);
+    } catch (err) {
+      throw new Error(`Model did not produce valid JSON: ${(err as Error).message}`);
+    }
   }
 
   const validated: LLMGuideOutput = LLMGuideOutputSchema.parse(parsed);
@@ -333,7 +407,7 @@ export async function analyzeRepoWithLLM(context: RepoContext): Promise<RepoGuid
     const retryOutput = await callLLM({
       system,
       user: retryUserPrompt,
-      maxTokens: config.isGroq ? 2000 : 4096,
+      maxTokens: config.isGroq ? 3500 : 4096,
       json: true,
     });
 

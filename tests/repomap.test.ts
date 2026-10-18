@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { parseGithubUrl, GithubApiError } from "../lib/github";
 import {
   extractJsonFromOutput,
+  repairJsonSyntax,
   buildMermaidDiagram,
   postProcessAnalysis,
 } from "../lib/analyzer";
@@ -86,6 +87,40 @@ describe("extractJsonFromOutput", () => {
   it("handles plain JSON with no fences", () => {
     const raw = "{\"summary\": {\"purpose\": \"direct\"}}";
     expect(extractJsonFromOutput(raw)).toBe(raw);
+  });
+});
+
+describe("repairJsonSyntax", () => {
+  it("repairs missing commas between objects in an array", () => {
+    const broken = '{"components": [\n  {"id": "c1"}\n  {"id": "c2"}\n]}';
+    const repaired = repairJsonSyntax(broken);
+    const parsed = JSON.parse(repaired);
+    expect(parsed.components).toHaveLength(2);
+    expect(parsed.components[0].id).toBe("c1");
+    expect(parsed.components[1].id).toBe("c2");
+  });
+
+  it("repairs missing commas between strings in an array", () => {
+    const broken = '{"items": [\n  "first"\n  "second"\n]}';
+    const repaired = repairJsonSyntax(broken);
+    const parsed = JSON.parse(repaired);
+    expect(parsed.items).toEqual(["first", "second"]);
+  });
+
+  it("repairs trailing commas before closing braces/brackets", () => {
+    const broken = '{"items": ["a", "b",], "nested": {"x": 1,},}';
+    const repaired = repairJsonSyntax(broken);
+    const parsed = JSON.parse(repaired);
+    expect(parsed.items).toEqual(["a", "b"]);
+    expect(parsed.nested.x).toBe(1);
+  });
+
+  it("repairs truncated JSON by closing brackets and braces", () => {
+    const broken = '{"summary": {"purpose": "Test"}, "items": [{"id": 1}';
+    const repaired = repairJsonSyntax(broken);
+    const parsed = JSON.parse(repaired);
+    expect(parsed.summary.purpose).toBe("Test");
+    expect(parsed.items[0].id).toBe(1);
   });
 });
 
