@@ -104,8 +104,12 @@ export default function Home() {
   };
 
   // Main Analysis function
-  const handleAnalyze = async (repoUrl: string, forceFresh = false) => {
-    setCurrentRepoUrl(repoUrl);
+  const handleAnalyze = async (repoUrl: string, forceFresh = false, branch?: string) => {
+    let finalUrl = repoUrl.trim();
+    if (branch && branch.trim() && !finalUrl.includes("/tree/")) {
+      finalUrl = `${finalUrl.replace(/\/+$/, "")}/tree/${branch.trim()}`;
+    }
+    setCurrentRepoUrl(finalUrl);
     setErrorInfo(null);
     setViewState("loading");
     setStartTime(Date.now());
@@ -125,7 +129,7 @@ export default function Home() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: repoUrl, forceFresh }),
+        body: JSON.stringify({ url: finalUrl, branch, forceFresh }),
         signal: abortController.signal,
       });
 
@@ -269,7 +273,7 @@ export default function Home() {
       <main className="flex-1 w-full max-w-[1200px] mx-auto px-4 sm:px-6 pt-12 flex flex-col">
         {viewState === "landing" && (
           <LandingView
-            onAnalyze={(url) => handleAnalyze(url)}
+            onAnalyze={(url, branch) => handleAnalyze(url, false, branch)}
             recentItems={recentItems}
             onSelectRecent={(url) => handleAnalyze(url)}
           />

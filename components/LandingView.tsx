@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ArrowRight, History, GitFork } from "lucide-react";
+import { ArrowRight, History, GitFork, GitBranch } from "lucide-react";
 
 export interface RecentItem {
   repoName: string;
@@ -10,7 +10,7 @@ export interface RecentItem {
 }
 
 interface LandingViewProps {
-  onAnalyze: (url: string) => void;
+  onAnalyze: (url: string, branch?: string) => void;
   recentItems: RecentItem[];
   onSelectRecent: (url: string) => void;
   isSubmitting?: boolean;
@@ -23,6 +23,7 @@ export function LandingView({
   isSubmitting = false,
 }: LandingViewProps) {
   const [inputUrl, setInputUrl] = useState("");
+  const [branch, setBranch] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const validateUrl = (value: string): boolean => {
@@ -46,7 +47,7 @@ export function LandingView({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (validateUrl(inputUrl)) {
-      onAnalyze(inputUrl.trim());
+      onAnalyze(inputUrl.trim(), branch.trim() || undefined);
     }
   };
 
@@ -93,7 +94,7 @@ export function LandingView({
           htmlFor="repo-url-input"
           className="block text-xs font-semibold text-text-primary mb-1.5"
         >
-          GitHub repository URL
+          GitHub repository URL & Branch / Tag
         </label>
         <div className="flex flex-col sm:flex-row gap-2">
           <input
@@ -111,6 +112,21 @@ export function LandingView({
               error ? "border-error" : "border-border-strong"
             }`}
           />
+          <div className="sm:w-48 relative shrink-0">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-text-helper">
+              <GitBranch size={14} strokeWidth={1.5} />
+            </div>
+            <input
+              id="branch-tag-input"
+              type="text"
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+              placeholder="Branch/Tag (opt)"
+              disabled={isSubmitting}
+              title="Specify a branch (e.g. develop, main) or release tag (e.g. v2.0)"
+              className="w-full h-12 pl-8 pr-3 bg-layer-01 border border-border-strong text-sm text-text-primary placeholder:text-text-helper rounded-none focus:outline-none focus:ring-2 focus:ring-accent font-mono text-xs"
+            />
+          </div>
           <button
             type="submit"
             disabled={isSubmitting}
@@ -127,7 +143,7 @@ export function LandingView({
           </p>
         ) : (
           <p className="mt-1.5 text-xs text-text-helper">
-            Example: https://github.com/owner/repository (supports branches and subpaths)
+            Example: https://github.com/owner/repository (supports custom branches like <span className="font-mono text-text-secondary">develop</span> or tags like <span className="font-mono text-text-secondary">v2.0</span>)
           </p>
         )}
       </form>

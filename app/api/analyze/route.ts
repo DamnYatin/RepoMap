@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let body: { url?: string; forceFresh?: boolean };
+  let body: { url?: string; branch?: string; forceFresh?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { url, forceFresh = false } = body;
+  let { url, branch, forceFresh = false } = body;
   if (!url || typeof url !== "string") {
     return NextResponse.json(
       {
@@ -62,6 +62,11 @@ export async function POST(req: NextRequest) {
       },
       { status: 400 }
     );
+  }
+
+  // Support explicit branch/tag selector parameter
+  if (branch && typeof branch === "string" && branch.trim() && !url.includes("/tree/")) {
+    url = `${url.replace(/\/+$/, "")}/tree/${branch.trim()}`;
   }
 
   const encoder = new TextEncoder();
