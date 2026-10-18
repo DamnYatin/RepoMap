@@ -489,9 +489,6 @@ export function ResultsView({
                       </a>
                     </div>
                     <div className="flex items-center space-x-3">
-                      <span className="text-[11px] font-mono text-text-helper">
-                        ~{item.estimatedMinutes || 2} min read
-                      </span>
                       {onExplainFile && (
                         <button
                           onClick={() => handleExplain(item.path)}
@@ -1018,7 +1015,7 @@ ${guide.directories.map((d) => `- \`${d.path}/\`: ${d.purpose}`).join("\n")}
 ${guide.startHere
   .map(
     (s, i) =>
-      `${i + 1}. **\`${s.path}\`** (~${s.estimatedMinutes || 2} min read)\n   - Why: ${s.why}\n   - You will learn: ${s.learn}`
+      `${i + 1}. **\`${s.path}\`**\n   - Why: ${s.why}\n   - You will learn: ${s.learn}`
   )
   .join("\n\n")}
 
