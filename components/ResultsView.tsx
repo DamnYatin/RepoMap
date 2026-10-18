@@ -267,16 +267,77 @@ export function ResultsView({
     }
   };
 
-  // Language breakdown colors (neutral slate / gray scale, no rainbow)
-  const languageColors: Record<string, string> = {
-    JavaScript: "#8d8d8d",
-    TypeScript: "#0f62fe",
-    Python: "#525252",
-    Go: "#6f6f6f",
-    Rust: "#393939",
-    HTML: "#a8a8a8",
-    CSS: "#c6c6c6",
-    Shell: "#8d8d8d",
+  // Recognized GitHub Linguist language colors for high visual distinction
+  const LANGUAGE_COLORS: Record<string, string> = {
+    JavaScript: "#f1e05a",
+    TypeScript: "#3178c6",
+    Python: "#3572A5",
+    HTML: "#e34c26",
+    CSS: "#563d7c",
+    SCSS: "#c6538c",
+    Sass: "#a53b70",
+    Less: "#1d365d",
+    Java: "#b07219",
+    Kotlin: "#A97BFF",
+    Go: "#00ADD8",
+    Rust: "#dea584",
+    C: "#555555",
+    "C++": "#f34b7d",
+    "C#": "#178600",
+    PHP: "#4F5D95",
+    Ruby: "#701516",
+    Swift: "#F05138",
+    Dart: "#00B4AB",
+    Shell: "#89e051",
+    Bash: "#89e051",
+    Vue: "#41b883",
+    Svelte: "#ff3e00",
+    R: "#198CE7",
+    Lua: "#000080",
+    Scala: "#c22d40",
+    Elixir: "#6e4a7e",
+    Clojure: "#db5855",
+    Haskell: "#5e5086",
+    OCaml: "#3be133",
+    SQL: "#e38c00",
+    GraphQL: "#e10098",
+    Solidity: "#aa6746",
+    Dockerfile: "#384d54",
+    Makefile: "#427819",
+    Perl: "#0298c3",
+    Zig: "#ec915c",
+    Nim: "#ffc200",
+    Julia: "#a270ba",
+    PowerShell: "#012456",
+    Jupyter: "#DA5B0B",
+    "Jupyter Notebook": "#DA5B0B",
+    JSON: "#cbcb41",
+    YAML: "#cb171e",
+    Markdown: "#083fa1",
+  };
+
+  const FALLBACK_PALETTE = [
+    "#0f62fe",
+    "#0072c3",
+    "#009d9a",
+    "#198038",
+    "#b28600",
+    "#ff832b",
+    "#fa4d56",
+    "#ee538b",
+    "#a56eff",
+    "#8a3ffc",
+  ];
+
+  const getLanguageColor = (lang: string): string => {
+    if (LANGUAGE_COLORS[lang]) return LANGUAGE_COLORS[lang];
+    let hash = 0;
+    for (let i = 0; i < lang.length; i++) {
+      hash = (hash << 5) - hash + lang.charCodeAt(i);
+      hash |= 0;
+    }
+    const index = Math.abs(hash) % FALLBACK_PALETTE.length;
+    return FALLBACK_PALETTE[index];
   };
 
   return (
@@ -311,7 +372,13 @@ export function ResultsView({
               <span>•</span>
               <span>★ {meta.stars.toLocaleString()}</span>
               <span>•</span>
-              <span>{meta.primaryLanguage}</span>
+              <span className="flex items-center space-x-1.5">
+                <span
+                  className="w-2 h-2 rounded-full inline-block"
+                  style={{ backgroundColor: getLanguageColor(meta.primaryLanguage) }}
+                />
+                <span>{meta.primaryLanguage}</span>
+              </span>
               <span>•</span>
               <span>
                 Analyzed {meta.filesAnalyzed} files in {meta.durationSeconds.toFixed(1)}s
@@ -430,30 +497,36 @@ export function ResultsView({
                   <h3 className="text-xs font-semibold text-text-helper uppercase tracking-wider mb-2">
                     Language Breakdown
                   </h3>
-                  <div className="w-full h-2.5 bg-layer-02 border border-border-subtle flex overflow-hidden">
-                    {Object.entries(meta.languages).map(([lang, pct]) => (
-                      <div
-                        key={lang}
-                        style={{
-                          width: `${pct}%`,
-                          backgroundColor: languageColors[lang] || "#8d8d8d",
-                        }}
-                        title={`${lang}: ${pct.toFixed(1)}%`}
-                      />
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap gap-4 mt-2 text-xs text-text-helper font-mono">
-                    {Object.entries(meta.languages).map(([lang, pct]) => (
-                      <div key={lang} className="flex items-center space-x-1.5">
-                        <span
-                          className="w-2 h-2 inline-block"
-                          style={{ backgroundColor: languageColors[lang] || "#8d8d8d" }}
+                  <div className="w-full h-3 rounded-sm bg-layer-02 border border-border-subtle flex overflow-hidden shadow-inner">
+                    {Object.entries(meta.languages).map(([lang, pct]) => {
+                      const color = getLanguageColor(lang);
+                      return (
+                        <div
+                          key={lang}
+                          style={{
+                            width: `${pct}%`,
+                            backgroundColor: color,
+                          }}
+                          className="h-full transition-all duration-300 hover:opacity-90"
+                          title={`${lang}: ${pct.toFixed(1)}%`}
                         />
-                        <span>
-                          {lang} {pct.toFixed(1)}%
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
+                  </div>
+                  <div className="flex flex-wrap gap-x-5 gap-y-2 mt-3 text-xs text-text-secondary font-mono">
+                    {Object.entries(meta.languages).map(([lang, pct]) => {
+                      const color = getLanguageColor(lang);
+                      return (
+                        <div key={lang} className="flex items-center space-x-2">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0 shadow-sm"
+                            style={{ backgroundColor: color }}
+                          />
+                          <span className="font-medium text-text-primary">{lang}</span>
+                          <span className="text-text-helper">{pct.toFixed(1)}%</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
