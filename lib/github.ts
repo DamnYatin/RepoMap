@@ -450,6 +450,7 @@ export async function getRepoContext(rawUrl: string, explicitBranch?: string): P
       repo,
       description: metaData.description || null,
       defaultBranch,
+      branch,
       stars: metaData.stargazers_count || 0,
       size: metaData.size || 0,
       archived: Boolean(metaData.archived),

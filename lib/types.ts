@@ -146,6 +146,7 @@ export interface RepoContext {
     repo: string;
     description: string | null;
     defaultBranch: string;
+    branch: string;
     stars: number;
     size: number;
     archived: boolean;

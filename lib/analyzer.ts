@@ -356,7 +356,7 @@ export function postProcessAnalysis(
       repoName: `${context.meta.owner}/${context.meta.repo}`,
       owner: context.meta.owner,
       repo: context.meta.repo,
-      branch: context.meta.defaultBranch,
+      branch: context.meta.branch || context.meta.defaultBranch,
       commitSha: context.treeSha,
       stars: context.meta.stars,
       primaryLanguage: context.meta.primaryLanguage,

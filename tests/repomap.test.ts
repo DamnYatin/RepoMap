@@ -168,6 +168,7 @@ describe("postProcessAnalysis and StartHere backfilling", () => {
         repo: "test",
         description: "Test repo",
         defaultBranch: "main",
+        branch: "main",
         stars: 100,
         size: 500,
         archived: false,
